@@ -1,0 +1,14 @@
+# 服务器配置
+server:
+  port: 8080                 # 后端端口，改这里就能换端口；被占用时可改成 8081
+
+# Spring 相关配置
+spring:
+  application:
+    name: checkin-server     # 应用名，日志里会打印，后面接链路追踪也靠它
+
+# 日志级别（开发时看 INFO 就够，想看 SQL 后面再调）
+logging:
+  level:
+    root: info
+    com.checkin: debug       # 我们自己写的包用 debug 级别，方便排查

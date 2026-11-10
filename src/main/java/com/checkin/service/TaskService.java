@@ -1,122 +1,100 @@
 package com.checkin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.checkin.entity.Task;
-import jakarta.annotation.PostConstruct;
+import com.checkin.mapper.TaskMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 任务业务层：增删改查真正干活的地方。
+ * 任务业务层。
  *
- * @Service 告诉 Spring："这个类是业务类，帮我创建好对象放进容器"，
- *          只有这样 Controller 里才能直接注入使用（这叫依赖注入）。
- *
- * 本阶段数据存在内存里（一个 Map），程序一重启数据就没了 —— 这是故意的，
- * 阶段 3 会换成 MySQL，那时候我们只改这一层，Controller 一行都不用动。
- * 这正是"分层"的好处。
+ * 阶段 2 数据存在内存 Map 里，重启就没了；
+ * 阶段 3 换成了 MySQL，但你可以对比一下：Controller 一行都没改，只改了这个类。
+ * 这就是分层的意义 —— 换存储方式时，影响范围被控制在 Service 这一层。
  */
 @Service
 public class TaskService {
 
     /**
-     * 存数据的地方：key 是任务 id，value 是任务对象。
-     * 用 ConcurrentHashMap 而不是 HashMap，是因为 Tomcat 处理请求是多线程的，
-     * HashMap 在多线程下并发写入会出问题（面试常问）。
+     * 数据访问对象，通过构造方法注入（Spring 自动把生成的 TaskMapper 塞进来）
+     * 有了它就不用自己写 JDBC 连接、拼 SQL、关连接，MyBatis 全包了。
      */
-    private final Map<Long, Task> taskStore = new ConcurrentHashMap<>();
+    private final TaskMapper taskMapper;
 
-    /** id 生成器：从 0 开始，每次 +1。AtomicLong 保证多线程下不会生成重复 id */
-    private final AtomicLong idGenerator = new AtomicLong(0);
-
-    /**
-     * 初始化两块演示数据，这样你打开浏览器就能看到东西，不用先手动新增。
-     * 阶段 3 接了数据库之后，这个方法可以删掉。
-     * @PostConstruct 意思是：这个对象创建好之后，自动执行一次。
-     */
-    @PostConstruct
-    public void initDemoData() {
-        Task t1 = new Task();
-        t1.setTitle("每天背 20 个单词");
-        t1.setDescription("用单词 App 打卡，连续 7 天算一个小目标");
-        create(t1);
-
-        Task t2 = new Task();
-        t2.setTitle("每天跑步 2 公里");
-        t2.setDescription("晚上 9 点前完成");
-        create(t2);
+    public TaskService(TaskMapper taskMapper) {
+        this.taskMapper = taskMapper;
     }
 
     // ---------------- 查：列表 ----------------
 
     /**
-     * 查全部任务，按 id 从大到小排（新建的排前面，符合直觉）
+     * 查全部任务，按 id 倒序（新任务在前面）。
+     *
+     * LambdaQueryWrapper 是 MyBatis-Plus 的条件构造器：
+     *   orderByDesc(Task::getId) 等价于 SQL 里的 ORDER BY id DESC，
+     *   用方法引用写字段名，编译器能帮你检查拼写，比手写字符串 "id" 安全。
      */
     public List<Task> list() {
-        List<Task> tasks = new ArrayList<>(taskStore.values());
-        tasks.sort(Comparator.comparing(Task::getId).reversed());
-        return tasks;
+        LambdaQueryWrapper<Task> wrapper = new LambdaQueryWrapper<>();
+        wrapper.orderByDesc(Task::getId);
+        return taskMapper.selectList(wrapper);
     }
 
     // ---------------- 查：单个 ----------------
 
-    /**
-     * 按 id 查一个任务。
-     * 返回 Optional 而不是直接返回 null，是为了强制调用方处理"查不到"的情况，
-     * 减少空指针异常（NullPointerException）。
-     */
     public Optional<Task> findById(Long id) {
         if (id == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(taskStore.get(id));
+        // selectById 查不到会返回 null，这里用 Optional 包一层，强制调用方判断空
+        return Optional.ofNullable(taskMapper.selectById(id));
     }
 
     // ---------------- 增 ----------------
 
     /**
-     * 新增任务：id 和创建时间都由后端生成，忽略前端传来的值
+     * 新增任务。
+     * id 交给数据库自增（所以先把前端传来的 id 置空，防止乱传覆盖其他数据），
+     * createAt 由后端生成，不信前端。
      */
     public Task create(Task task) {
-        Task saved = new Task();
-        saved.setId(idGenerator.incrementAndGet());
-        saved.setTitle(task.getTitle());
-        saved.setDescription(task.getDescription());
-        saved.setCreatedAt(LocalDateTime.now());
-        taskStore.put(saved.getId(), saved);
-        return saved;
+        task.setId(null);
+        task.setCreatedAt(LocalDateTime.now());
+        taskMapper.insert(task);
+        // 插入后 task 里的 id 已经被 MyBatis-Plus 自动回填了，可以直接返回
+        return task;
     }
 
     // ---------------- 改 ----------------
 
     /**
-     * 修改任务：只允许改 title 和 description，改不到就返回 null
-     * 注意这里是"整体覆盖"，不是"只改传了的字段"，逻辑简单，等阶段 3 再优化。
+     * 修改任务：先查再改，查不到返回 null 让 Controller 报 404。
+     *
+     * 为什么不直接用 updateById(传进来的对象)？
+     * 因为那样会把 createdAt 也覆盖成 null（前端没传这个字段），数据就丢了。
+     * 所以标准做法是：先查出完整对象 → 改允许改的字段 → 再更新。
      */
     public Task update(Long id, Task newTask) {
-        Task old = taskStore.get(id);
+        Task old = taskMapper.selectById(id);
         if (old == null) {
-            return null;   // 不存在，交给 Controller 返回 404
+            return null;
         }
         old.setTitle(newTask.getTitle());
         old.setDescription(newTask.getDescription());
-        // 注意：old 是 Map 里那个对象的引用，改它就是改 Map 里的数据，不用再 put 一次
+        taskMapper.updateById(old);
         return old;
     }
 
     // ---------------- 删 ----------------
 
     /**
-     * 删除任务：返回 true 表示删掉了，false 表示本来就没有这个 id
+     * 删除任务：deleteById 返回受影响的行数，>0 说明真删掉了
      */
     public boolean delete(Long id) {
-        return taskStore.remove(id) != null;
+        return taskMapper.deleteById(id) > 0;
     }
 }

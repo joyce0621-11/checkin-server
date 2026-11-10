@@ -1,0 +1,13 @@
+# 本地配置模板（这个文件会提交进仓库，给别人看格式用）
+#
+# 使用方法：
+#   1. 复制本文件，重命名为 application-local.yml
+#   2. 把下面的密码改成你自己 MySQL 的 root 密码
+#   3. application-local.yml 已被 .gitignore 忽略，不会泄露到 GitHub
+#
+# 也可以不改文件，用环境变量启动：
+#   Windows PowerShell:  $env:DB_PASSWORD="你的密码"; mvn spring-boot:run
+spring:
+  datasource:
+    # 只写密码；用户名和地址在 application.yml 里
+    password: 在这里填你的MySQL密码

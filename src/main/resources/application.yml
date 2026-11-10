@@ -1,14 +1,42 @@
-# 服务器配置
+# ============ 服务器 ============
 server:
-  port: 8080                 # 后端端口，改这里就能换端口；被占用时可改成 8081
+  port: 8080                 # 后端端口，被占用可改成 8081
 
-# Spring 相关配置
+# ============ 应用 ============
 spring:
   application:
-    name: checkin-server     # 应用名，日志里会打印，后面接链路追踪也靠它
+    name: checkin-server
 
-# 日志级别（开发时看 INFO 就够，想看 SQL 后面再调）
+  # 激活哪个配置文件：local 表示会额外加载 application-local.yml
+  # 真实密码放 application-local.yml，这个文件不进仓库（已在 .gitignore 里）
+  profiles:
+    active: local
+
+  # ============ 数据源（连哪个数据库） ============
+  # 这里只说"连哪里"，密码不在这个文件里
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/checkin?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    # ${DB_PASSWORD:} 表示：优先读环境变量 DB_PASSWORD，没有就用空字符串。
+    # 本地开发由 application-local.yml 覆盖成真实密码，所以仓库里看不到密码。
+    password: ${DB_PASSWORD:}
+
+# ============ MyBatis-Plus ============
+mybatis-plus:
+  configuration:
+    # 数据库字段 created_at → Java 属性 createdAt，自动转驼峰，不用手写映射
+    map-underscore-to-camel-case: true
+    # 把执行的 SQL 打到控制台，调试神器；上线要关掉
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 主键策略：数据库自增
+      id-type: auto
+    banner: false
+
+# ============ 日志 ============
 logging:
   level:
     root: info
-    com.checkin: debug       # 我们自己写的包用 debug 级别，方便排查
+    com.checkin: debug

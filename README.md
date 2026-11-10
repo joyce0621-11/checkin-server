@@ -11,33 +11,41 @@
 | --- | --- |
 | 语言 | Java 21 |
 | 框架 | Spring Boot 3.5 |
+| 持久层 | MyBatis-Plus 3.5 |
+| 数据库 | MySQL 8.0 |
 | 构建 | Maven |
-| 后续接入 | MySQL / MyBatis-Plus（阶段 3） |
 
 ## 当前进度
 
 - [x] **阶段 1**：项目骨架搭建，服务能启动，健康检查接口可用
 - [x] **阶段 2**：任务（Task）增删改查接口，内存存储 + 统一返回格式
-- [ ] 阶段 3：接入 MySQL + MyBatis-Plus，数据真正落库
+- [x] **阶段 3**：接入 MySQL + MyBatis-Plus，数据真正落库
 - [ ] 阶段 4：打卡记录、连续打卡天数统计、全局异常处理
 - [ ] 阶段 5：内置简单网页 + 接口文档 + 与 AI Agent 联动
 
 ## 快速开始
 
-环境要求：JDK 21、Maven 3.9+
+环境要求：JDK 21、Maven 3.9+、MySQL 8.0
 
 ```bash
-# 1. 进入项目目录
-cd checkin-server
+# 1. 建库建表（在项目根目录执行，-p 后面是你的密码）
+mysql -u root -p < db/schema.sql
 
-# 2. 启动项目
+# 2. 配置数据库密码：复制模板并改名，填入自己的密码
+#    Windows: copy src\main\resources\application-local.yml.example src\main\resources\application-local.yml
+cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
+
+# 3. 启动项目
 mvn spring-boot:run
 ```
 
+> 数据库密码只写在 `application-local.yml` 里，该文件已被 `.gitignore` 忽略，**不会提交到仓库**。
+> 也可以改用环境变量：`$env:DB_PASSWORD="你的密码"; mvn spring-boot:run`
+
 看到 `打卡系统后端启动成功` 就说明起来了，然后浏览器打开：
 
+- 任务列表：<http://localhost:8080/api/tasks>
 - 健康检查：<http://localhost:8080/api/health>
-- 打招呼：<http://localhost:8080/api/hello?name=小明>
 
 ## 接口说明
 
@@ -97,6 +105,8 @@ curl -X POST http://localhost:8080/api/tasks \
 
 ```
 checkin-server
+├── db
+│   └── schema.sql                     # 建库建表脚本
 ├── src/main/java/com/checkin
 │   ├── CheckinApplication.java        # 启动类（程序入口）
 │   ├── common/Result.java             # 统一返回格式
@@ -104,21 +114,38 @@ checkin-server
 │   │   ├── HealthController.java      # 健康检查接口
 │   │   └── TaskController.java        # 任务接口
 │   ├── service
-│   │   └── TaskService.java           # 任务业务逻辑（当前为内存存储）
+│   │   └── TaskService.java           # 任务业务逻辑
+│   ├── mapper
+│   │   └── TaskMapper.java            # 数据访问层（MyBatis-Plus BaseMapper）
 │   └── entity
-│       └── Task.java                  # 任务实体
+│       └── Task.java                  # 任务实体（对应 task 表）
 ├── src/main/resources
-│   └── application.yml                # 配置文件（端口等）
+│   ├── application.yml                # 主配置（端口、数据源地址、MyBatis-Plus）
+│   ├── application-local.yml.example  # 密码模板（提交进仓库）
+│   └── application-local.yml          # 真实密码（被 gitignore，不提交）
 ├── pom.xml                            # Maven 依赖配置
 └── .gitignore                         # 忽略编译产物与密钥文件
 ```
+
+## 数据表
+
+`task`（打卡任务）
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT | 主键，自增 |
+| title | VARCHAR(100) | 任务名称，必填 |
+| description | VARCHAR(500) | 任务描述，可空 |
+| created_at | DATETIME | 创建时间，后端生成 |
 
 ## 开发笔记
 
 - 端口被占用时，改 `application.yml` 里的 `server.port` 即可。
 - 启动类必须放在最外层包（`com.checkin`），否则子包里的接口会 404。
-- 当前数据存在内存 `ConcurrentHashMap` 里，**重启服务数据会清空**，阶段 3 接 MySQL 后解决。
+- 数据已落 MySQL，重启服务数据不丢。
+- **密码不进仓库**：`application-local.yml` 被 gitignore，仓库里只提交 `.example` 模板。
 - 用 `body` 传 JSON 时记得设置 `Content-Type: application/json`，否则后端收到的字段全是 null。
+- 修改记录时采用「先查 → 改允许改的字段 → 再更新」，避免前端没传的字段被覆盖成 null。
 
 ## 作者
 
